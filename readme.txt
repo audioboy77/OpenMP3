@@ -1,0 +1,1 @@
+See the [resources] folder for usage example
