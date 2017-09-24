@@ -69,8 +69,6 @@ private:
 
 	friend Decoder;
 
-	//TODO local static data needs to move here
-
 };
 
 
@@ -103,6 +101,8 @@ private:
 
 	const UInt8 * m_start, * m_ptr, * m_end;
 
+	bool m_hack_first;		//for Info frame skipping hack
+
 };
 
 
@@ -132,6 +132,9 @@ public:
 private:
 
 	struct Private;
+
+
+	const Library & library;
 
 
 	UInt8 m_br[8320];
@@ -193,8 +196,10 @@ private:
 	UInt8 m_mode_extension;
 
 
-	const UInt8 * m_ptr;	//pointer to data area
+	const UInt8 * m_ptr;		//pointer to data area
 
-	UInt m_datasize;		//size of whole frame, minus headerword + check
+	UInt m_datasize;			//size of whole frame, minus headerword + check
+
+	UInt m_length;				//for Info frame skipping
 
 };

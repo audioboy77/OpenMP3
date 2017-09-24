@@ -34,23 +34,24 @@ namespace OpenMP3
 
 OpenMP3::UInt OpenMP3::ReadHuffman(Reservoir & br, UInt sfreq, const FrameData & data, UInt part_2_start, UInt gr, UInt ch, Float32 is[576])
 {
-	int x, y, v, w;
-	UInt table_num, is_pos;
-	UInt region_1_start, region_2_start; /* region_0_start = 0 */
-
 	//Check that there is any data to decode. If not,zero the array
 	if (data.part2_3_length[gr][ch] == 0) 
 	{
-		for (is_pos = 0; is_pos < 576; is_pos++) is[is_pos] = 0.0;
+		for (UInt i = 0; i < 576; i++) is[i] = 0.0f;
+
+		//MemClear(is, 2304);
 
 		return 0;
 	}
 
-	/* Calculate bit_pos_end which is the index of the last bit for this part. */
-	UInt bit_pos_end = part_2_start + data.part2_3_length[gr][ch] - 1;
+	int x, y, v, w;
+
+	UInt table_num, is_pos, region_1_start, region_2_start;
+
+	UInt bit_pos_end = part_2_start + data.part2_3_length[gr][ch] - 1; //calc the index of the last bit for this part
 
 	/* Determine region boundaries */
-	if ((data.win_switch_flag[gr][ch] == 1) && (data.block_type[gr][ch] == 2))
+	if (data.window_switching[gr][ch] && (data.block_type[gr][ch] == 2))
 	{
 		region_1_start = 36;  /* sfb[9/3]*3=36 */
 
@@ -58,40 +59,41 @@ OpenMP3::UInt OpenMP3::ReadHuffman(Reservoir & br, UInt sfreq, const FrameData &
 	}
 	else 
 	{
-		//UInt sfreq = header.sampling_frequency;
-
 		region_1_start = kScaleFactorBandIndices[sfreq].l[data.region0_count[gr][ch] + 1];
 		
 		region_2_start = kScaleFactorBandIndices[sfreq].l[data.region0_count[gr][ch] + data.region1_count[gr][ch] + 2];
 	}
 
 	/* Read big_values using tables according to region_x_start */
-	for (is_pos = 0; is_pos < data.big_values[gr][ch] * 2; is_pos++)
+
+	auto table_select = data.table_select[gr][ch];
+
+	for (is_pos = 0; is_pos < data.big_values[gr][ch] * 2; /*is_pos++*/)
 	{
 		if (is_pos < region_1_start) 
 		{
-			table_num = data.table_select[gr][ch][0];
+			table_num = table_select[0];
 		}
 		else if (is_pos < region_2_start) 
 		{
-			table_num = data.table_select[gr][ch][1];
+			table_num = table_select[1];
 		}
 		else
 		{
-			table_num = data.table_select[gr][ch][2];
+			table_num = table_select[2];
 		}
 
 		HuffmanDecode(br, table_num, &x, &y, &v, &w);
 
 		is[is_pos++] = Float32(x);
 
-		is[is_pos] = Float32(y);
+		is[is_pos++] = Float32(y);	//was no ++
 	}
 	
 	/* Read small values until is_pos = 576 or we run out of huffman data */
 	table_num = data.count1table_select[gr][ch] + 32;
 
-	for (is_pos = data.big_values[gr][ch] * 2; (is_pos <= 572) && (br.GetPosition() <= bit_pos_end); is_pos++)
+	for (is_pos = data.big_values[gr][ch] * 2; (is_pos <= 572) && (br.GetPosition() <= bit_pos_end); /*is_pos++*/)
 	{
 		HuffmanDecode(br, table_num, &x, &y, &v, &w);
 
@@ -101,10 +103,13 @@ OpenMP3::UInt OpenMP3::ReadHuffman(Reservoir & br, UInt sfreq, const FrameData &
 		
 		is[is_pos++] = Float32(x);
 		
-		is[is_pos] = Float32(y);
+		is[is_pos++] = Float32(y);	//was no ++
 	}
 
-	if (br.GetPosition() > (bit_pos_end + 1)) is_pos -= 4; //If read past the end of this section, remove last words read
+	if (br.GetPosition() > (bit_pos_end + 1))
+	{
+		is_pos -= 4; //If read past the end of this section, remove last words read
+	}
 		
 	//g_frame_data.count1[gr][ch] = is_pos;		//Setup count1 which is the index of the first sample in the rzero reg
 

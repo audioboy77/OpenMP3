@@ -34,10 +34,10 @@ void OpenMP3::Requantize(UInt sfreq, const FrameData & data, UInt gr, UInt ch, F
 	UInt sfb /* scalefac band index */, next_sfb /* frequency of next sfb */, i, j;
 
 	/* Determine type of block to process */
-	if ((data.win_switch_flag[gr][ch] == 1) && (data.block_type[gr][ch] == 2))	//Short blocks
+	if (data.window_switching[gr][ch] && (data.block_type[gr][ch] == 2))	//Short blocks
 	{ 
 		/* Check if the first two subbands (=2*18 samples = 8 long or 3 short sfb's) uses long blocks */
-		if (data.mixed_block_flag[gr][ch] != 0)
+		if (data.mixed_block[gr][ch])
 		{ 
 			/* 2 longbl. sb  first */
 			/* First process the 2 long block subbands at the start */
@@ -132,51 +132,50 @@ void OpenMP3::Requantize(UInt sfreq, const FrameData & data, UInt gr, UInt ch, F
 	}
 }
 
+
 void OpenMP3::Reorder(UInt sfreq, const FrameData & data, UInt gr, UInt ch, Float32 is[576])
 {
-	Float32 re[576];	//TODO use working buffer
+	OpenMP3::Float32 re[576];	//TODO use working buffer
 
-	UInt i, j, win;
-
-	if ((data.win_switch_flag[gr][ch] == 1) && (data.block_type[gr][ch] == 2))	//Only reorder short blocks
+	if (data.window_switching[gr][ch] && (data.block_type[gr][ch] == 2))	//Only reorder short blocks
 	{
 		/* Check if the first two subbands (=2*18 samples = 8 long or 3 short sfb's) uses long blocks */
 
-		UInt sfb = (data.mixed_block_flag[gr][ch] != 0) ? 3 : 0; /* 2 longbl. sb  first */
+		auto s = kScaleFactorBandIndices[sfreq].s;
 
-		UInt next_sfb = kScaleFactorBandIndices[sfreq].s[sfb + 1] * 3;
+		UInt sfb = data.mixed_block[gr][ch] ? 3 : 0; /* 2 longbl. sb  first */
 
-		UInt win_len = kScaleFactorBandIndices[sfreq].s[sfb + 1] - kScaleFactorBandIndices[sfreq].s[sfb];
+		UInt count1 = data.count1[gr][ch];
 
-		for (i = ((sfb == 0) ? 0 : 36); i < 576; /* i++ done below! */)
+		UInt next_sfb = s[sfb + 1] * 3;
+
+		UInt win_len = s[sfb + 1] - s[sfb];
+
+		for (UInt i = ((sfb == 0) ? 0 : 36); i < 576; /* i++ done below! */)
 		{
 			/* Check if we're into the next scalefac band */
 			if (i == next_sfb)
 			{
 				/* Copy reordered data back to the original vector */
-				for (j = 0; j < 3 * win_len; j++) is[3 * kScaleFactorBandIndices[sfreq].s[sfb] + j] = re[j];
+				for (UInt j = 0; j < 3 * win_len; j++) is[3 * s[sfb] + j] = re[j];
 
 				/* Check if this band is above the rzero region,if so we're done */
-				if (i >= data.count1[gr][ch]) return;
+				if (i >= count1) return;
 
 				sfb++;
 
-				next_sfb = kScaleFactorBandIndices[sfreq].s[sfb + 1] * 3;
+				next_sfb = s[sfb + 1] * 3;
 
-				win_len = kScaleFactorBandIndices[sfreq].s[sfb + 1] - kScaleFactorBandIndices[sfreq].s[sfb];
+				win_len = s[sfb + 1] - s[sfb];
 			}
 
-			for (win = 0; win < 3; win++)	//Do the actual reordering
-			{
-				for (j = 0; j < win_len; j++)
-				{
-					re[j * 3 + win] = is[i++];
-				}
-			}
+			//Do the actual reordering
+
+			for (UInt win = 0; win < 3; win++) for (UInt j = 0; j < win_len; j++) re[j * 3 + win] = is[i++];
 		}
 
 		/* Copy reordered data of last band back to original vector */
-		for (j = 0; j < 3 * win_len; j++) is[3 * kScaleFactorBandIndices[sfreq].s[12] + j] = re[j];
+		for (UInt j = 0; j < 3 * win_len; j++) is[3 * s[12] + j] = re[j];
 	}
 }
 

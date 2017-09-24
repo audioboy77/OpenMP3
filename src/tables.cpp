@@ -37,3 +37,4 @@ const OpenMP3::UInt OpenMP3::kScaleFactorSizes[16][2] =
 	{ 2,1 },{ 2,2 },{ 2,3 },{ 3,1 },{ 3,2 },{ 3,3 },{ 4,2 },{ 4,3 }
 };
 
+const OpenMP3::UInt8 OpenMP3::kInfo[4] = { 'I', 'n', 'f', 'o' };

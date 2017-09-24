@@ -1,4 +1,4 @@
-*** OpenMP3 v0.9 ***
+﻿*** OpenMP3 v0.91 ***
 
 - A licence-free MP3 decoding library.
 
@@ -18,7 +18,7 @@
 	- it is intentionally not the latest commit of PDMP3, made by adalinbv, which adding a streaming API as that latest commit had buffer overrun issues which were unfixed at the time of writing OpenMP3
 
 
-	
+
 
 * LIBRARY DESIGN CONSIDERATIONS * 
 
@@ -30,7 +30,9 @@
 
 - Multi-instance / thread-safe (main technical limitation of PDMP3)
 
-- Proper seperation of concerns (primarily, fully decoupling streaming & parsing from the actual decoding algorithm)
+- Proper seperation of concerns (decoupled frame streaming & parsing from the decoding algorithm)
+
+- Single .h and .cpp include
 
 
 
@@ -42,14 +44,28 @@
 	- I am *not* going to fix, I am not a DSP developer! Contributors are needed to fix this!
 
 
-	
+
 
 * TODO * 
 	
+- Support for iterating / extracting ID3 tags
+	- Currently they should just be skipped
+
 - Optimisations
 	- Some basic optimisations were done as part of the refactor
-	- However lots of optimisation potential still exists.  Roughly two major blocks:
-	- Phase (1) re-factor data layout to massively reduce deferencing, move some local static data to the Library class, plus other small optimisations 
-	- Phase (2) some calculations to be pre-computed
-	- Phase (3) use vector operations
+	- However lots of optimisation potential still exists.  Roughly three blocks:
+		- (1) re-factor data layout to massively reduce deferencing, move some local static data to the Library class, plus other small optimisations 
+		- (2) some calculations to be pre-computed (maybe)
+		- (3) use simd/vector operations
 
+
+
+
+* CHANGE LOG * 
+
+- Version 0.9: Initial release
+
+- Version 0.91
+	- Approx 3x faster decoding due to use of pre-calc tables in IMDCT_Win
+	- Skip initial silent 'Info' frame created by LAME encoder
+	

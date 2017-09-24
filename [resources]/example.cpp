@@ -13,12 +13,14 @@ void ParseMP3(const void * mp3_file, unsigned file_size)
 	
 	OpenMP3::Iterator itr(openmp3, (OpenMP3::UInt8*)mp3_file, file_size);
 
-	OpenMP3::Frame frame;
 
 	bool mono = true;
 
 	OpenMP3::UInt br = 0;
 	
+
+	OpenMP3::Frame frame;
+
 	while (itr.GetNext(frame))
 	{
 		if (frame.GetBitRate() > br) br = frame.GetBitRate();
@@ -40,15 +42,17 @@ void LoadMP3(const void * mp3_file, unsigned file_size)
 
 	OpenMP3::Iterator itr(openmp3, (OpenMP3::UInt8*)mp3_file, file_size);
 
+
+	float buffer[2][1152];
+
+	std::vector <float> channels[2];
+
+	bool mono = true;
+
+
 	OpenMP3::Decoder decoder(openmp3);
 
 	OpenMP3::Frame frame;
-
-	OpenMP3::Float32 buffer[2][1152];
-
-	std::vector <OpenMP3::Float32> channels[2];
-
-	bool mono = true;
 
 	while (itr.GetNext(frame))
 	{
@@ -66,5 +70,5 @@ void LoadMP3(const void * mp3_file, unsigned file_size)
 		mono = mono && (frame.GetMode() == OpenMP3::kModeMono);
 	}
 
-	OpenMP3::UInt count = channels[0].size();
+	OpenMP3::UInt length = channels[0].size();
 }

@@ -12,7 +12,8 @@
 namespace OpenMP3
 {
 
-	void IMDCT_Win(UInt blocktype, Float32 in[18], Float32 out[36]);
+	void IMDCT_Win(UInt blocktype, const Float32 in[18], Float32 out[36]);
+
 
 	extern const Float32 kCS[8];
 
@@ -20,36 +21,38 @@ namespace OpenMP3
 
 	extern const Float32 kSynthDtbl[512];
 
-#ifdef IMDCT_NTABLES
-	extern const float g_imdct_win[4][36];
-
-	extern const float cos_N12[6][12];
-
-	extern const float cos_N36[18][36];
-#endif
-
 }
 
 void OpenMP3::Antialias(const FrameData & data, UInt gr, UInt ch, Float32 is[576])
 {
+	bool window_switching = data.window_switching[gr][ch];
+
+	bool block_type_2 = data.block_type[gr][ch] == 2;
+
+	bool mixed_block = data.mixed_block[gr][ch];
+
+
 	// No antialiasing is done for short blocks
-	if ((data.win_switch_flag[gr][ch] == 1) && (data.block_type[gr][ch] == 2) && (data.mixed_block_flag[gr][ch]) == 0) return;
+	if (window_switching && block_type_2 && !mixed_block) return;
 
 	// Setup the limit for how many subbands to transform
-	unsigned sblim = ((data.win_switch_flag[gr][ch] == 1) && (data.block_type[gr][ch] == 2) && (data.mixed_block_flag[gr][ch] == 1)) ? 2 : 32;
+	UInt sblim = (window_switching && block_type_2 && mixed_block) ? 2 : 32;
 
-	//Do the actual antialiasing
-	for (unsigned sb = 1; sb < sblim; sb++)
+	for (UInt sb = 1; sb < sblim; sb++)
 	{
-		for (unsigned i = 0; i < 8; i++)
+		for (UInt i = 0; i < 8; i++)
 		{
-			unsigned li = 18 * sb - 1 - i;
+			UInt li = 18 * sb - 1 - i;
 
-			unsigned ui = 18 * sb + i;
+			UInt ui = 18 * sb + i;
 
-			float lb = is[li] * kCS[i] - is[ui] * kCa[i];
+			Float32 cs = kCS[i];
 
-			float ub = is[ui] * kCS[i] + is[li] * kCa[i];
+			Float32 ca = kCa[i];
+
+			Float32 lb = is[li] * cs - is[ui] * ca;
+
+			Float32 ub = is[ui] * cs+ is[li] * ca;
 
 			is[li] = lb;
 
@@ -58,108 +61,87 @@ void OpenMP3::Antialias(const FrameData & data, UInt gr, UInt ch, Float32 is[576
 	}
 }
 
-void OpenMP3::HybridSynthesis(const FrameData & data, UInt gr, UInt ch, Float32 store[2][32][18], Float32 is[576])
+void OpenMP3::HybridSynthesis(const FrameData & data, UInt gr, UInt ch, Float32 store[32][18], Float32 is[576])
 {
-	unsigned sb, i;
+	bool window_switching = data.window_switching[gr][ch];
 
-	float rawout[36];
+	UInt block_type = data.block_type[gr][ch];
 
-	//static float store[2][32][18];
+	bool mixed_block = data.mixed_block[gr][ch];
 
-	//if (hsynth_init) // Clear stored samples vector. TODO use memset 
-	//{
-	//	for (j = 0; j < 2; j++)
-	//	{
-	//		for (sb = 0; sb < 32; sb++)
-	//		{
-	//			for (i = 0; i < 18; i++) store[j][sb][i] = 0.0;
-	//		}
-	//	}
+	Float32 rawout[36];
 
-	//	hsynth_init = 0;
-	//}
-
-	for (sb = 0; sb < 32; sb++) //Loop through all 32 subbands
+	for (UInt sb = 0; sb < 32; sb++) //Loop through all 32 subbands
 	{
-		UInt blocktype = ((data.win_switch_flag[gr][ch] == 1) && (data.mixed_block_flag[gr][ch] == 1) && (sb < 2)) ? 0 : data.block_type[gr][ch];
+		UInt blocktype = ((window_switching == 1) && mixed_block && (sb < 2)) ? 0 : block_type;
 
 		IMDCT_Win(blocktype, is + (sb * 18), rawout);	//inverse modified DCT and windowing
 
-		for (i = 0; i < 18; i++)	//Overlapp add with stored vector into main_data vector
+		for (UInt i = 0; i < 18; i++)	//Overlapp add with stored vector into main_data vector
 		{
-			is[sb * 18 + i] = rawout[i] + store[ch][sb][i];
+			is[sb * 18 + i] = rawout[i] + store[sb][i];
 
-			store[ch][sb][i] = rawout[i + 18];
+			store[sb][i] = rawout[i + 18];
 		}
 	}
 }
 
-void OpenMP3::FrequencyInversion(Float32 is[576])
+FORCEINLINE void OpenMP3::FrequencyInversion(Float32 is[576])
 {
-	for (UInt sb = 1; sb < 32; sb += 2)
-	{
-		for (UInt i = 1; i < 18; i += 2) is[sb * 18 + i] = -is[sb * 18 + i];
-	}
+	for (UInt sb = 1; sb < 32; sb += 2) for (UInt i = 1; i < 18; i += 2) is[sb * 18 + i] = -is[sb * 18 + i];
 }
 
-void OpenMP3::SubbandSynthesis(const FrameData & data, UInt ch, const Float32 is[576], Float32 v_vec[2][1024], Float32 out[576])
+void OpenMP3::SubbandSynthesis(const FrameData & data, const Float32 is[576], Float32 v_vec[1024], Float32 out[576])
 {
-	float u_vec[512], s_vec[32];	//TODO use working buffer
+	static float sbs_n_win[64][32];
 
-	UInt i, j;
-
-	static float g_synth_n_win[64][32];	//TODO to library
-
-	static unsigned init = 1;
+	static bool init = true;
 
 	if (init)
 	{
-		for (i = 0; i < 64; i++) for (j = 0; j < 32; j++) g_synth_n_win[i][j] = Float32(cos(Float64((16 + i) * (2 * j + 1)) * (C_PI / 64.0)));
+		for (UInt i = 0; i < 64; i++) for (UInt j = 0; j < 32; j++) sbs_n_win[i][j] = Float32(cos(Float64((16 + i) * (2 * j + 1)) * (C_PI / 64.0)));
 
-		//for (i = 0; i < 2; i++) for (j = 0; j < 1024; j++) v_vec[i][j] = 0.0; //Setup the v_vec intermediate vector, TODO: memset
-
-		init = 0;
+		init = false;
 	}
 
-	//if (synth_init)
-	//{
-	//	for (i = 0; i < 2; i++) for (j = 0; j < 1024; j++) v_vec[i][j] = 0.0; //Setup the v_vec intermediate vector, TODO: memset
-
-	//	synth_init = 0;
-	//}
+	Float32 u_vec[512], s_vec[32];
 
 	for (UInt ss = 0; ss < 18; ss++)  //Loop through 18 samples in 32 subbands
 	{
-		for (i = 1023; i > 63; i--)  v_vec[ch][i] = v_vec[ch][i - 64];	//Shift up the V vector 
+		for (UInt i = 1023; i > 63; i--)  v_vec[i] = v_vec[i - 64];	//Shift up the V vector 
 
-		for (i = 0; i < 32; i++) s_vec[i] = is[i * 18 + ss]; //Copy next 32 time samples to a temp vector
+		for (UInt i = 0; i < 32; i++) s_vec[i] = is[i * 18 + ss]; //Copy next 32 time samples to a temp vector
 
-		for (i = 0; i < 64; i++) //Matrix multiply input with n_win[][] matrix
+		for (UInt i = 0; i < 64; i++) //Matrix multiply input with n_win[][] matrix
 		{ 
 			Float32 sum = 0.0;
 
-			for (j = 0; j < 32; j++) sum += g_synth_n_win[i][j] * s_vec[j];
+			for (UInt j = 0; j < 32; j++) sum += sbs_n_win[i][j] * s_vec[j];
 
-			v_vec[ch][i] = sum;
+			v_vec[i] = sum;
 		}
 
-		for (i = 0; i < 8; i++)	//Build the U vector
+		for (UInt i = 0; i < 8; i++)	//Build the U vector
 		{ 
-			for (j = 0; j < 32; j++) // <<7 == *128
+			for (UInt j = 0; j < 32; j++) // <<7 == *128
 			{ 
-				u_vec[(i << 6) + j] = v_vec[ch][(i << 7) + j];
+				UInt i6 = i << 6;
 
-				u_vec[(i << 6) + j + 32] = v_vec[ch][(i << 7) + j + 96];
+				UInt i7 = i << 7;
+
+				u_vec[i6 + j] = v_vec[i7 + j];
+
+				u_vec[i6 + j + 32] = v_vec[i7 + j + 96];
 			}
 		}
 
-		for (i = 0; i < 512; i++) u_vec[i] *= kSynthDtbl[i];	//Window by u_vec[i] with kSynthDtbl[i]
+		for (UInt i = 0; i < 512; i++) u_vec[i] *= kSynthDtbl[i];	//Window by u_vec[i] with kSynthDtbl[i]
 
-		for (i = 0; i < 32; i++)
+		for (UInt i = 0; i < 32; i++)
 		{
 			Float32 sum = 0.0;
 
-			for (j = 0; j < 16; j++) sum += u_vec[(j << 5) + i];	//sum += u_vec[j*32 + i];
+			for (UInt j = 0; j < 16; j++) sum += u_vec[(j << 5) + i];	//sum += u_vec[j*32 + i];
 
 			out[(32 * ss) + i] = sum;
 		}
@@ -167,78 +149,80 @@ void OpenMP3::SubbandSynthesis(const FrameData & data, UInt ch, const Float32 is
 }
 
 //Does inverse modified DCT and windowing
-void OpenMP3::IMDCT_Win(UInt blocktype, Float32 in[18], Float32 out[36])
+void OpenMP3::IMDCT_Win(UInt blocktype, const Float32 in[18], Float32 out[36])
 {
-	UInt i, m, N, p;	//TODO optimise N
+	static Float32 imdct_win[4][36];
 
-#ifndef IMDCT_TABLES
-	static float g_imdct_win[4][36];	//TODO move to Library
-	static unsigned init = 1;
+	static Float32 cos_n12[6][12];
 
-	//TODO : move to separate init function
+	static Float32 cos_n36[18][36];
+
+	static bool init = true;
+
 	if (init)
-	{ /* Setup the four(one for each block type) window vectors */
-		for (i = 0; i < 36; i++)  g_imdct_win[0][i] = Float32(sin((C_PI / 36.0) * (i + 0.5))); //0
-		for (i = 0; i < 18; i++)  g_imdct_win[1][i] = Float32(sin((C_PI / 36.0) * (i + 0.5))); //1
-		for (i = 18; i < 24; i++) g_imdct_win[1][i] = 1.0f;
-		for (i = 24; i < 30; i++) g_imdct_win[1][i] = Float32(sin((C_PI / 12.0) * (i + 0.5 - 18.0)));
-		for (i = 30; i < 36; i++) g_imdct_win[1][i] = 0.0f;
-		for (i = 0; i < 12; i++)  g_imdct_win[2][i] = Float32(sin((C_PI / 12.0) * (i + 0.5))); //2
-		for (i = 12; i < 36; i++) g_imdct_win[2][i] = 0.0f;
-		for (i = 0; i < 6; i++)   g_imdct_win[3][i] = 0.0f; //3
-		for (i = 6; i < 12; i++)  g_imdct_win[3][i] = Float32(sin((C_PI / 12.0) * (i + 0.5 - 6.0)));
-		for (i = 12; i < 18; i++) g_imdct_win[3][i] = 1.0f;
-		for (i = 18; i < 36; i++) g_imdct_win[3][i] = Float32(sin((C_PI / 36.0) * (i + 0.5)));
-		init = 0;
+	{ 
+		for (UInt i = 0; i < 36; i++)  imdct_win[0][i] = Float32(sin((C_PI / 36.0) * (i + 0.5))); //0
+		for (UInt i = 0; i < 18; i++)  imdct_win[1][i] = Float32(sin((C_PI / 36.0) * (i + 0.5))); //1
+		for (UInt i = 18; i < 24; i++) imdct_win[1][i] = 1.0f;
+		for (UInt i = 24; i < 30; i++) imdct_win[1][i] = Float32(sin((C_PI / 12.0) * (i + 0.5 - 18.0)));
+		for (UInt i = 30; i < 36; i++) imdct_win[1][i] = 0.0f;
+		for (UInt i = 0; i < 12; i++)  imdct_win[2][i] = Float32(sin((C_PI / 12.0) * (i + 0.5))); //2
+		for (UInt i = 12; i < 36; i++) imdct_win[2][i] = 0.0f;
+		for (UInt i = 0; i < 6; i++)   imdct_win[3][i] = 0.0f; //3
+		for (UInt i = 6; i < 12; i++)  imdct_win[3][i] = Float32(sin((C_PI / 12.0) * (i + 0.5 - 6.0)));
+		for (UInt i = 12; i < 18; i++) imdct_win[3][i] = 1.0f;
+		for (UInt i = 18; i < 36; i++) imdct_win[3][i] = Float32(sin((C_PI / 36.0) * (i + 0.5)));
+
+		for (UInt p = 0; p < 12; p++) for (UInt m = 0; m < 6; m++) cos_n12[m][p] = Float32(cos(C_PI / 24 * (2 * p + 1 + 6) * (2 * m + 1)));
+
+		for (UInt p = 0; p < 36; p++) for (UInt m = 0; m < 18; m++)	cos_n36[m][p] = Float32(cos(C_PI / 72 * (2 * p + 1 + 18) * (2 * m + 1)));
+
+		init = false;
 	}
-#endif
 
-	for (i = 0; i < 36; i++) out[i] = 0.0;
+	//MemClear(out, sizeof(Float32) * 36);
 
-	if (blocktype == 2)	//3 short blocks
+	for (UInt i = 0; i < 36; i++) out[i] = 0.0;
+
+	const float * blocktype_imdct_win = imdct_win[blocktype];
+
+	if (blocktype == 2)	//3 short blocks, N = 12
 	{
-		float tin[18];	//TODO remove, appears to be unneccesary
-
-		for (i = 0; i < 18; i++) tin[i] = in[i];
-
-		N = 12;
-		for (i = 0; i < 3; i++)
+		const float * tin = in;
+		
+		for (UInt i = 0; i < 3; i++)
 		{
-			for (p = 0; p < N; p++)
+			for (UInt p = 0; p < 12; p++)
 			{
-				Float64 sum = 0.0;
+				Float32 sum = 0.0f;
 
-				for (m = 0; m < N / 2; m++)
+				for (UInt m = 0; m < 6; m++)		//N / 2
 				{
-#ifdef IMDCT_NTABLES
-					sum += tin[i + 3 * m] * cos_N12[m][p];
-#else
-					sum += tin[i + 3 * m] * cos(C_PI / (2 * N)*(2 * p + 1 + N / 2)*(2 * m + 1));
-#endif
+					//sum += tin[i + 3 * m] * cos(C_PI / 24 * (2 * p + 1 + 6) * (2 * m + 1));
+
+					sum += tin[i + 3 * m] * cos_n12[m][p];
 				}
 
-				out[6 * i + p + 6] += Float32(sum) * g_imdct_win[blocktype][p]; //TODO FIXME +=?
+				out[6 * i + p + 6] += Float32(sum) * blocktype_imdct_win[p];
 			}
 		}
 	}
 	else
 	{
-		/* block_type != 2 */
-		N = 36;
-		for (p = 0; p < N; p++)
-		{
-			Float64 sum = 0.0;
+		//block_type != 2, N = 36
 
-			for (m = 0; m < N / 2; m++)
+		for (UInt p = 0; p < 36; p++)
+		{
+			Float32 sum = 0.0f;
+
+			for (UInt m = 0; m < 18; m++)	//N / 2
 			{
-#ifdef IMDCT_NTABLES
-				sum += in[m] * cos_N36[m][p];
-#else
-				sum += in[m] * cos(C_PI / (2 * N)*(2 * p + 1 + N / 2)*(2 * m + 1));
-#endif
+				//sum += in[m] * cos(C_PI / 72 * (2 * p + 1 + 18) * (2 * m + 1));
+
+				sum += in[m] * cos_n36[m][p];
 			}
 
-			out[p] = Float32(sum) * g_imdct_win[blocktype][p];
+			out[p] = Float32(sum) * blocktype_imdct_win[p];
 		}
 	}
 }
@@ -383,166 +367,4 @@ const float OpenMP3::kSynthDtbl[512] =
 	0.000045776, 0.000045776, 0.000030518, 0.000030518,
 	0.000030518, 0.000030518, 0.000015259, 0.000015259,
 	0.000015259, 0.000015259, 0.000015259, 0.000015259,
-	//},g_synth_n_win[64][32]={
 };
-
-
-#ifdef IMDCT_TABLES
-const float g_imdct_win[4][36] =
-{
-	{ 0.043619f,0.130526f,0.216440f,0.300706f,0.382683f,0.461749f,
-	0.537300f,0.608761f,0.675590f,0.737277f,0.793353f,0.843391f,
-	0.887011f,0.923880f,0.953717f,0.976296f,0.991445f,0.999048f,
-	0.999048f,0.991445f,0.976296f,0.953717f,0.923879f,0.887011f,
-	0.843391f,0.793353f,0.737277f,0.675590f,0.608761f,0.537299f,
-	0.461748f,0.382683f,0.300706f,0.216439f,0.130526f,0.043619f
-	},{ 0.043619f,0.130526f,0.216440f,0.300706f,0.382683f,0.461749f,
-	0.537300f,0.608761f,0.675590f,0.737277f,0.793353f,0.843391f,
-	0.887011f,0.923880f,0.953717f,0.976296f,0.991445f,0.999048f,
-	1.000000f,1.000000f,1.000000f,1.000000f,1.000000f,1.000000f,
-	0.991445f,0.923880f,0.793353f,0.608761f,0.382683f,0.130526f,
-	0.000000f,0.000000f,0.000000f,0.000000f,0.000000f,0.000000f
-	},{ 0.130526f,0.382683f,0.608761f,0.793353f,0.923880f,0.991445f,
-	0.991445f,0.923880f,0.793353f,0.608761f,0.382683f,0.130526f,
-	0.000000f,0.000000f,0.000000f,0.000000f,0.000000f,0.000000f,
-	0.000000f,0.000000f,0.000000f,0.000000f,0.000000f,0.000000f,
-	0.000000f,0.000000f,0.000000f,0.000000f,0.000000f,0.000000f,
-	0.000000f,0.000000f,0.000000f,0.000000f,0.000000f,0.000000f,
-	},{ 0.000000f,0.000000f,0.000000f,0.000000f,0.000000f,0.000000f,
-	0.130526f,0.382683f,0.608761f,0.793353f,0.923880f,0.991445f,
-	1.000000f,1.000000f,1.000000f,1.000000f,1.000000f,1.000000f,
-	0.999048f,0.991445f,0.976296f,0.953717f,0.923879f,0.887011f,
-	0.843391f,0.793353f,0.737277f,0.675590f,0.608761f,0.537299f,
-	0.461748f,0.382683f,0.300706f,0.216439f,0.130526f,0.043619f,
-	}
-};
-
-const float cos_N12[6][12] =
-{
-	{ 0.608761f,0.382683f,0.130526f,-0.130526f,-0.382683f,-0.608761f,
-	-0.793353f,-0.923880f,-0.991445f,-0.991445f,-0.923879f,-0.793353f
-	},{ -0.923880f,-0.923879f,-0.382683f,0.382684f,0.923880f,0.923879f,
-	0.382683f,-0.382684f,-0.923880f,-0.923879f,-0.382683f,0.382684f
-	},{ -0.130526f,0.923880f,0.608761f,-0.608762f,-0.923879f,0.130526f,
-	0.991445f,0.382683f,-0.793354f,-0.793353f,0.382684f,0.991445f
-	},{ 0.991445f,-0.382684f,-0.793353f,0.793354f,0.382683f,-0.991445f,
-	0.130527f,0.923879f,-0.608762f,-0.608761f,0.923880f,0.130525f
-	},{ -0.382684f,-0.382683f,0.923879f,-0.923880f,0.382684f,0.382683f,
-	-0.923879f,0.923880f,-0.382684f,-0.382683f,0.923879f,-0.923880f
-	},{ -0.793353f,0.923879f,-0.991445f,0.991445f,-0.923880f,0.793354f,
-	-0.608762f,0.382684f,-0.130527f,-0.130525f,0.382682f,-0.608761f, },
-};
-
-const float cos_N36[18][36] =
-{
-	{ 0.675590f,0.608761f,0.537300f,0.461749f,0.382683f,0.300706f,
-	0.216440f,0.130526f,0.043619f,-0.043619f,-0.130526f,-0.216440f,
-	-0.300706f,-0.382684f,-0.461749f,-0.537300f,-0.608762f,-0.675590f,
-	-0.737277f,-0.793353f,-0.843392f,-0.887011f,-0.923880f,-0.953717f,
-	-0.976296f,-0.991445f,-0.999048f,-0.999048f,-0.991445f,-0.976296f,
-	-0.953717f,-0.923879f,-0.887011f,-0.843391f,-0.793353f,-0.737277f
-	},{ -0.793353f,-0.923880f,-0.991445f,-0.991445f,-0.923879f,-0.793353f,
-	-0.608761f,-0.382683f,-0.130526f,0.130526f,0.382684f,0.608762f,
-	0.793354f,0.923880f,0.991445f,0.991445f,0.923879f,0.793353f,
-	0.608761f,0.382683f,0.130526f,-0.130527f,-0.382684f,-0.608762f,
-	-0.793354f,-0.923880f,-0.991445f,-0.991445f,-0.923879f,-0.793353f,
-	-0.608761f,-0.382683f,-0.130526f,0.130527f,0.382684f,0.608762f
-	},{ -0.537299f,-0.130526f,0.300706f,0.675590f,0.923880f,0.999048f,
-	0.887011f,0.608761f,0.216439f,-0.216440f,-0.608762f,-0.887011f,
-	-0.999048f,-0.923879f,-0.675590f,-0.300705f,0.130527f,0.537300f,
-	0.843392f,0.991445f,0.953717f,0.737277f,0.382683f,-0.043620f,
-	-0.461749f,-0.793354f,-0.976296f,-0.976296f,-0.793353f,-0.461748f,
-	-0.043618f,0.382684f,0.737278f,0.953717f,0.991445f,0.843391f
-	},{ 0.887011f,0.991445f,0.737277f,0.216439f,-0.382684f,-0.843392f,
-	-0.999048f,-0.793353f,-0.300705f,0.300706f,0.793354f,0.999048f,
-	0.843391f,0.382683f,-0.216440f,-0.737278f,-0.991445f,-0.887010f,
-	-0.461748f,0.130527f,0.675591f,0.976296f,0.923879f,0.537299f,
-	-0.043621f,-0.608762f,-0.953717f,-0.953717f,-0.608760f,-0.043618f,
-	0.537301f,0.923880f,0.976296f,0.675589f,0.130525f,-0.461750f
-	},{ 0.382683f,-0.382684f,-0.923880f,-0.923879f,-0.382683f,0.382684f,
-	0.923880f,0.923879f,0.382683f,-0.382684f,-0.923880f,-0.923879f,
-	-0.382683f,0.382684f,0.923880f,0.923879f,0.382682f,-0.382685f,
-	-0.923880f,-0.923879f,-0.382682f,0.382685f,0.923880f,0.923879f,
-	0.382682f,-0.382685f,-0.923880f,-0.923879f,-0.382682f,0.382685f,
-	0.923880f,0.923879f,0.382682f,-0.382685f,-0.923880f,-0.923879f
-	},{ -0.953717f,-0.793353f,0.043620f,0.843392f,0.923879f,0.216439f,
-	-0.675591f,-0.991445f,-0.461748f,0.461749f,0.991445f,0.675589f,
-	-0.216441f,-0.923880f,-0.843391f,-0.043618f,0.793354f,0.953717f,
-	0.300704f,-0.608763f,-0.999048f,-0.537298f,0.382685f,0.976296f,
-	0.737276f,-0.130528f,-0.887012f,-0.887010f,-0.130524f,0.737279f,
-	0.976296f,0.382681f,-0.537301f,-0.999048f,-0.608760f,0.300708f
-	},{ -0.216439f,0.793354f,0.887010f,-0.043620f,-0.923880f,-0.737277f,
-	0.300707f,0.991445f,0.537299f,-0.537301f,-0.991445f,-0.300705f,
-	0.737278f,0.923879f,0.043618f,-0.887012f,-0.793352f,0.216441f,
-	0.976296f,0.608760f,-0.461750f,-0.999048f,-0.382682f,0.675592f,
-	0.953716f,0.130524f,-0.843393f,-0.843390f,0.130529f,0.953718f,
-	0.675588f,-0.382686f,-0.999048f,-0.461746f,0.608764f,0.976295f
-	},{ 0.991445f,0.382683f,-0.793354f,-0.793353f,0.382684f,0.991445f,
-	0.130525f,-0.923880f,-0.608760f,0.608763f,0.923879f,-0.130528f,
-	-0.991445f,-0.382682f,0.793354f,0.793352f,-0.382685f,-0.991445f,
-	-0.130524f,0.923880f,0.608760f,-0.608763f,-0.923879f,0.130529f,
-	0.991445f,0.382681f,-0.793355f,-0.793352f,0.382686f,0.991444f,
-	0.130523f,-0.923881f,-0.608759f,0.608764f,0.923878f,-0.130529f
-	},{ 0.043619f,-0.991445f,-0.216439f,0.953717f,0.382682f,-0.887011f,
-	-0.537299f,0.793354f,0.675589f,-0.675591f,-0.793352f,0.537301f,
-	0.887010f,-0.382685f,-0.953716f,0.216442f,0.991445f,-0.043622f,
-	-0.999048f,-0.130524f,0.976297f,0.300703f,-0.923881f,-0.461746f,
-	0.843393f,0.608759f,-0.737279f,-0.737275f,0.608764f,0.843390f,
-	-0.461752f,-0.923878f,0.300709f,0.976295f,-0.130530f,-0.999048f
-	},{ -0.999048f,0.130527f,0.976296f,-0.300707f,-0.923879f,0.461750f,
-	0.843391f,-0.608763f,-0.737276f,0.737279f,0.608760f,-0.843392f,
-	-0.461747f,0.923880f,0.300704f,-0.976297f,-0.130524f,0.999048f,
-	-0.043622f,-0.991445f,0.216442f,0.953716f,-0.382686f,-0.887009f,
-	0.537302f,0.793351f,-0.675593f,-0.675588f,0.793355f,0.537297f,
-	-0.887013f,-0.382680f,0.953718f,0.216436f,-0.991445f,-0.043615f
-	},{ 0.130527f,0.923879f,-0.608762f,-0.608760f,0.923880f,0.130525f,
-	-0.991445f,0.382685f,0.793352f,-0.793355f,-0.382682f,0.991445f,
-	-0.130528f,-0.923879f,0.608763f,0.608759f,-0.923881f,-0.130523f,
-	0.991444f,-0.382686f,-0.793351f,0.793355f,0.382680f,-0.991445f,
-	0.130530f,0.923878f,-0.608764f,-0.608758f,0.923881f,0.130522f,
-	-0.991444f,0.382687f,0.793351f,-0.793356f,-0.382679f,0.991445f
-	},{ 0.976296f,-0.608762f,-0.461747f,0.999048f,-0.382685f,-0.675589f,
-	0.953717f,-0.130528f,-0.843390f,0.843393f,0.130524f,-0.953716f,
-	0.675592f,0.382681f,-0.999048f,0.461751f,0.608759f,-0.976297f,
-	0.216443f,0.793351f,-0.887012f,-0.043616f,0.923878f,-0.737280f,
-	-0.300702f,0.991444f,-0.537303f,-0.537296f,0.991445f,-0.300710f,
-	-0.737274f,0.923881f,-0.043624f,-0.887009f,0.793356f,0.216435f
-	},{ -0.300707f,-0.608760f,0.999048f,-0.537301f,-0.382682f,0.976296f,
-	-0.737279f,-0.130524f,0.887010f,-0.887012f,0.130529f,0.737276f,
-	-0.976297f,0.382686f,0.537297f,-0.999048f,0.608764f,0.300703f,
-	-0.953716f,0.793355f,0.043616f,-0.843389f,0.923881f,-0.216444f,
-	-0.675587f,0.991445f,-0.461752f,-0.461745f,0.991444f,-0.675594f,
-	-0.216435f,0.923878f,-0.843394f,0.043625f,0.793350f,-0.953719f
-	},{ -0.923879f,0.923880f,-0.382685f,-0.382682f,0.923879f,-0.923880f,
-	0.382685f,0.382681f,-0.923879f,0.923880f,-0.382686f,-0.382681f,
-	0.923878f,-0.923881f,0.382686f,0.382680f,-0.923878f,0.923881f,
-	-0.382687f,-0.382680f,0.923878f,-0.923881f,0.382687f,0.382679f,
-	-0.923878f,0.923881f,-0.382688f,-0.382679f,0.923878f,-0.923881f,
-	0.382688f,0.382678f,-0.923877f,0.923882f,-0.382689f,-0.382678f
-	},{ 0.461750f,0.130525f,-0.675589f,0.976296f,-0.923880f,0.537301f,
-	0.043617f,-0.608760f,0.953716f,-0.953718f,0.608764f,-0.043622f,
-	-0.537297f,0.923878f,-0.976297f,0.675593f,-0.130530f,-0.461745f,
-	0.887009f,-0.991445f,0.737280f,-0.216444f,-0.382679f,0.843389f,
-	-0.999048f,0.793356f,-0.300711f,-0.300701f,0.793350f,-0.999048f,
-	0.843394f,-0.382689f,-0.216434f,0.737273f,-0.991444f,0.887014f
-	},{ 0.843391f,-0.991445f,0.953717f,-0.737279f,0.382685f,0.043617f,
-	-0.461747f,0.793352f,-0.976295f,0.976297f,-0.793355f,0.461751f,
-	-0.043623f,-0.382680f,0.737275f,-0.953716f,0.991445f,-0.843394f,
-	0.537303f,-0.130530f,-0.300702f,0.675587f,-0.923878f,0.999048f,
-	-0.887013f,0.608766f,-0.216445f,-0.216434f,0.608757f,-0.887008f,
-	0.999048f,-0.923882f,0.675595f,-0.300712f,-0.130520f,0.537294f
-	},{ -0.608763f,0.382685f,-0.130528f,-0.130524f,0.382681f,-0.608760f,
-	0.793352f,-0.923879f,0.991444f,-0.991445f,0.923881f,-0.793355f,
-	0.608764f,-0.382687f,0.130530f,0.130522f,-0.382680f,0.608758f,
-	-0.793351f,0.923878f,-0.991444f,0.991446f,-0.923881f,0.793357f,
-	-0.608766f,0.382689f,-0.130532f,-0.130520f,0.382678f,-0.608756f,
-	0.793349f,-0.923877f,0.991444f,-0.991446f,0.923882f,-0.793358f
-	},{ -0.737276f,0.793352f,-0.843390f,0.887010f,-0.923879f,0.953716f,
-	-0.976295f,0.991444f,-0.999048f,0.999048f,-0.991445f,0.976297f,
-	-0.953718f,0.923881f,-0.887013f,0.843394f,-0.793356f,0.737280f,
-	-0.675594f,0.608765f,-0.537304f,0.461753f,-0.382688f,0.300711f,
-	-0.216445f,0.130532f,-0.043625f,-0.043613f,0.130520f,-0.216433f,
-	0.300699f,-0.382677f,0.461742f,-0.537293f,0.608755f,-0.675585f
-	}
-};
-#endif

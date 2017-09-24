@@ -25,4 +25,7 @@ namespace OpenMP3
 
 	extern const UInt kScaleFactorSizes[16][2];
 
+
+	extern const UInt8 kInfo[4];
+
 }

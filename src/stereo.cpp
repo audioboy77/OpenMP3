@@ -28,8 +28,6 @@ namespace OpenMP3
 
 void OpenMP3::Stereo(UInt sfreq, UInt8 joint_stereo_mode, const FrameData & data, unsigned gr, Float32 is[2][576])
 {
-	//TODO optimise this branching, with else
-
 	//Do nothing if joint stereo is not enabled
 	//if ((header.mode != 1) || (header.mode_extension == 0)) return;
 
@@ -57,12 +55,12 @@ void OpenMP3::Stereo(UInt sfreq, UInt8 joint_stereo_mode, const FrameData & data
 
 		//First band that is intensity stereo encoded is first band scale factor band on or above count1 frequency line. 
 		//N.B.: Intensity stereo coding is only done for higher subbands, but logic is here for lower subbands
-		if ((data.win_switch_flag[gr][0] == 1) && (data.block_type[gr][0] == 2))
+		if (data.window_switching[gr][0] && (data.block_type[gr][0] == 2))
 		{ 
 			//Short blocks
 			
 			//Check if the first two subbands *(=2*18 samples = 8 long or 3 short sfb's) uses long blocks
-			if (data.mixed_block_flag[gr][0] != 0)
+			if (data.mixed_block[gr][0])
 			{
 				UInt sfb;
 

@@ -53,16 +53,6 @@ struct OpenMP3::Iterator::Private
 //
 //
 
-OpenMP3::Library::Library()
-{
-}
-
-
-
-
-//
-//
-
 OpenMP3::Frame::Frame()
 	: m_ptr(0)
 {
@@ -93,7 +83,8 @@ OpenMP3::Mode OpenMP3::Frame::GetMode() const
 OpenMP3::Iterator::Iterator(const Library & library, const UInt8 * data, UInt size)
 	: m_start(data),
 	m_ptr(data),
-	m_end(data + size)
+	m_end(data + size),
+	m_hack_first(true)
 {
 }
 
@@ -174,8 +165,6 @@ bool OpenMP3::Iterator::GetNext(Frame & frame)
 
 	//UInt nch = (mono ? 1 : 2);
 
-	//UInt sideinfo_size = (mono ? 17 : 32);
-
 	//if (Private::GetRemainder(*this) < sideinfo_size) return false;
 
 	//m_ptr += sideinfo_size;
@@ -190,6 +179,25 @@ bool OpenMP3::Iterator::GetNext(Frame & frame)
 	frame.m_ptr = m_ptr;
 
 	frame.m_datasize = framesize - (protection_bit ? 0 : 2);
+
+
+	//correct solution is to actually read ancillary data after huffman table
+	//but exact ancillary position is difficult to deduce with current implementation
+	//solution: refactor ReadMain code?
+
+	frame.m_length = 1152;
+
+	if (m_hack_first)
+	{
+		m_hack_first = false;
+		 
+		UInt sideinfo_size = (frame.m_mode == kModeMono ? 17 : 32);
+
+		const UInt8 * ptr = m_ptr + sideinfo_size;
+
+		if (*reinterpret_cast<const UInt32*>(ptr) == reinterpret_cast<const UInt32&>(kInfo[0])) frame.m_length = 0;
+	}
+
 
 	m_ptr += framesize;	
 
