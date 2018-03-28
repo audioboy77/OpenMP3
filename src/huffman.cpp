@@ -520,5 +520,5 @@ const OpenMP3::HuffmanTable OpenMP3::kHuffmanTables[34] =
 	{ OpenMP3::kHuffmanTableSet + 2230 ,512,11 },  /* Table 30 */
 	{ OpenMP3::kHuffmanTableSet + 2230 ,512,13 },  /* Table 31 */
 	{ OpenMP3::kHuffmanTableSet + 2742 , 31, 0 },  /* Table 32 */
-	{ OpenMP3::kHuffmanTableSet + 2261 , 31, 0 },  /* Table 33 */
+	{ OpenMP3::kHuffmanTableSet + 2273 , 31, 0 },  /* Table 33 */
 };
