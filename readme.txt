@@ -1,1 +1,1 @@
-See the [resources] folder for usage example
+See the [resources] folder for notes and usage example
