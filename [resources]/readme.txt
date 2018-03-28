@@ -37,15 +37,6 @@
 
 
 
-* KNOWN ISSUES * 
-
-- Decoding errors exist!!! (as with original PDMP3)
-	- See "fail/" folder for examples
-	- I am *not* going to fix, I am not a DSP developer! Contributors are needed to fix this!
-
-
-
-
 * TODO * 
 	
 - Support for iterating / extracting ID3 tags
@@ -63,9 +54,12 @@
 
 * CHANGE LOG * 
 
-- Version 0.9: Initial release
-
+- Version 0.95
+	- Fixed an error in kHuffmanTables, seems to have fixed known decoding errors
+	
 - Version 0.91
 	- Approx 3x faster decoding due to use of pre-calc tables in IMDCT_Win
 	- Skip initial silent 'Info' frame created by LAME encoder
 	
+- Version 0.9: Initial release
+
