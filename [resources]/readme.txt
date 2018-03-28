@@ -1,4 +1,4 @@
-﻿*** OpenMP3 v0.91 ***
+﻿*** OpenMP3 v0.95 ***
 
 - A licence-free MP3 decoding library.
 
@@ -45,8 +45,8 @@
 - Optimisations
 	- Some basic optimisations were done as part of the refactor
 	- However lots of optimisation potential still exists.  Roughly three blocks:
-		- (1) re-factor data layout to massively reduce deferencing, move some local static data to the Library class, plus other small optimisations 
-		- (2) some calculations to be pre-computed (maybe)
+		- (1) re-factor data layout to reduce deferencing
+		- (2) some more calculations to be pre-computed (maybe)
 		- (3) use simd/vector operations
 
 
