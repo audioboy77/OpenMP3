@@ -1,5 +1,7 @@
 #include "synthesis.h"
 
+#include <cmath>
+
 #include "types.h"
 #include "tables.h"
 
@@ -99,7 +101,7 @@ void OpenMP3::SubbandSynthesis(const FrameData & data, const Float32 is[576], Fl
 
 	if (init)
 	{
-		for (UInt i = 0; i < 64; i++) for (UInt j = 0; j < 32; j++) sbs_n_win[i][j] = Float32(cos(Float64((16 + i) * (2 * j + 1)) * (C_PI / 64.0)));
+		for (UInt i = 0; i < 64; i++) for (UInt j = 0; j < 32; j++) sbs_n_win[i][j] = Float32(cos(Float64((16 + i) * (2 * j + 1)) * (M_PI / 64.0)));
 
 		init = false;
 	}
@@ -161,21 +163,21 @@ void OpenMP3::IMDCT_Win(UInt blocktype, const Float32 in[18], Float32 out[36])
 
 	if (init)
 	{ 
-		for (UInt i = 0; i < 36; i++)  imdct_win[0][i] = Float32(sin((C_PI / 36.0) * (i + 0.5))); //0
-		for (UInt i = 0; i < 18; i++)  imdct_win[1][i] = Float32(sin((C_PI / 36.0) * (i + 0.5))); //1
+		for (UInt i = 0; i < 36; i++)  imdct_win[0][i] = Float32(sin((M_PI / 36.0) * (i + 0.5))); //0
+		for (UInt i = 0; i < 18; i++)  imdct_win[1][i] = Float32(sin((M_PI / 36.0) * (i + 0.5))); //1
 		for (UInt i = 18; i < 24; i++) imdct_win[1][i] = 1.0f;
-		for (UInt i = 24; i < 30; i++) imdct_win[1][i] = Float32(sin((C_PI / 12.0) * (i + 0.5 - 18.0)));
+		for (UInt i = 24; i < 30; i++) imdct_win[1][i] = Float32(sin((M_PI / 12.0) * (i + 0.5 - 18.0)));
 		for (UInt i = 30; i < 36; i++) imdct_win[1][i] = 0.0f;
-		for (UInt i = 0; i < 12; i++)  imdct_win[2][i] = Float32(sin((C_PI / 12.0) * (i + 0.5))); //2
+		for (UInt i = 0; i < 12; i++)  imdct_win[2][i] = Float32(sin((M_PI / 12.0) * (i + 0.5))); //2
 		for (UInt i = 12; i < 36; i++) imdct_win[2][i] = 0.0f;
 		for (UInt i = 0; i < 6; i++)   imdct_win[3][i] = 0.0f; //3
-		for (UInt i = 6; i < 12; i++)  imdct_win[3][i] = Float32(sin((C_PI / 12.0) * (i + 0.5 - 6.0)));
+		for (UInt i = 6; i < 12; i++)  imdct_win[3][i] = Float32(sin((M_PI / 12.0) * (i + 0.5 - 6.0)));
 		for (UInt i = 12; i < 18; i++) imdct_win[3][i] = 1.0f;
-		for (UInt i = 18; i < 36; i++) imdct_win[3][i] = Float32(sin((C_PI / 36.0) * (i + 0.5)));
+		for (UInt i = 18; i < 36; i++) imdct_win[3][i] = Float32(sin((M_PI / 36.0) * (i + 0.5)));
 
-		for (UInt p = 0; p < 12; p++) for (UInt m = 0; m < 6; m++) cos_n12[m][p] = Float32(cos(C_PI / 24 * (2 * p + 1 + 6) * (2 * m + 1)));
+		for (UInt p = 0; p < 12; p++) for (UInt m = 0; m < 6; m++) cos_n12[m][p] = Float32(cos(M_PI / 24 * (2 * p + 1 + 6) * (2 * m + 1)));
 
-		for (UInt p = 0; p < 36; p++) for (UInt m = 0; m < 18; m++)	cos_n36[m][p] = Float32(cos(C_PI / 72 * (2 * p + 1 + 18) * (2 * m + 1)));
+		for (UInt p = 0; p < 36; p++) for (UInt m = 0; m < 18; m++)	cos_n36[m][p] = Float32(cos(M_PI / 72 * (2 * p + 1 + 18) * (2 * m + 1)));
 
 		init = false;
 	}
