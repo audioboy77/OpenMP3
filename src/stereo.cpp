@@ -34,7 +34,7 @@ void OpenMP3::Stereo(UInt sfreq, UInt8 joint_stereo_mode, const FrameData & data
 	if (joint_stereo_mode & 0x2) //Mid/Side stereo processing
 	{
 		/* Determine how many frequency lines to transform */
-		UInt max_pos = data.count1[gr][!!(data.count1[gr][0] > data.count1[gr][1])];
+		UInt max_pos = data.count1[gr][!(data.count1[gr][0] > data.count1[gr][1])];
 	
 		/* Do the actual processing */
 		for (UInt i = 0; i < max_pos; i++)
