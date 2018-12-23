@@ -1,0 +1,21 @@
+set(CHANNELPLUGIN_INCLUDE_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}")
+add_library(
+  OpenMP3
+  STATIC
+  decoder.cpp
+  huffman.cpp
+  huffman.h
+  iterator.cpp
+  requantize.cpp
+  requantize.h
+  stereo.cpp
+  stereo.h
+  synthesis.cpp
+  synthesis.h
+  tables.cpp
+  tables.h
+  types.h)
+target_include_directories(
+  OpenMP3
+  PUBLIC
+  ${OPENMP3_INCLUDE_DIRECTORY})
